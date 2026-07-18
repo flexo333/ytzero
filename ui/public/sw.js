@@ -10,3 +10,8 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim())
   );
 });
+
+// A fetch handler is required for the browser to treat this as an installable
+// PWA (Android Chrome will not offer "Install app" without one). This one is a
+// no-op: the browser handles every request normally, so behaviour is unchanged.
+self.addEventListener("fetch", () => {});
