@@ -392,6 +392,29 @@ export interface PlaylistInfo {
 const playlistCache = new Map<string, { at: number; data: PlaylistInfo[]; complete: boolean }>();
 const MAX_PLAYLIST_CONTINUATION_PAGES = 50;
 
+/** Lockup content types that a channel's playlists tab renders as a list of
+ * videos. Podcasts are ordinary playlists behind a different card type, so
+ * they are invisible on the channel page unless collected here too. */
+const PLAYLIST_LOCKUP_TYPES = ["PLAYLIST", "PODCAST"];
+
+function isPlaylistLockupType(contentType: unknown): boolean {
+  const type = String(contentType ?? "");
+  return PLAYLIST_LOCKUP_TYPES.some((candidate) => type.includes(candidate));
+}
+
+/** Playlist lockups carry the list id in `contentId`, but podcast cards link
+ * through a browse endpoint whose id is the list id behind a `VL` prefix. */
+export function playlistIdFromLockup(vm: any): string {
+  const command = vm?.rendererContext?.commandContext?.onTap?.innertubeCommand ?? vm?.onTap?.innertubeCommand;
+  const candidates = [vm?.contentId, command?.watchEndpoint?.playlistId, command?.browseEndpoint?.browseId];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string" || !candidate) continue;
+    const id = candidate.startsWith("VL") ? candidate.slice(2) : candidate;
+    if (id) return id;
+  }
+  return "";
+}
+
 function collectChannelPlaylists(data: any, out: PlaylistInfo[], seen: Set<string>) {
   // Legacy markup.
   for (const r of deepCollect(data, "gridPlaylistRenderer")) {
@@ -406,8 +429,9 @@ function collectChannelPlaylists(data: any, out: PlaylistInfo[], seen: Set<strin
   }
   // Current markup (lockup view models).
   for (const vm of deepCollect(data, "lockupViewModel")) {
-    const id = vm?.contentId;
-    if (!id || seen.has(id) || !String(vm?.contentType ?? "").includes("PLAYLIST")) continue;
+    if (!isPlaylistLockupType(vm?.contentType)) continue;
+    const id = playlistIdFromLockup(vm);
+    if (!id || seen.has(id)) continue;
     seen.add(id);
     const badges = deepCollect(vm, "thumbnailBadgeViewModel")
       .map((b: any) => b?.text)
@@ -415,7 +439,9 @@ function collectChannelPlaylists(data: any, out: PlaylistInfo[], seen: Set<strin
     out.push({
       playlistId: id,
       title: decodeHtmlEntities(vm?.metadata?.lockupMetadataViewModel?.title?.content ?? ""),
-      thumbnail: deepCollect(vm, "sources")[0]?.[0]?.url ?? "",
+      // Cards can nest a source group without urls (podcast covers do) ahead of
+      // the artwork, so take the first entry that actually carries one.
+      thumbnail: deepCollect(vm, "sources").flat().find((source: any) => source?.url)?.url ?? "",
       videoCount: badges[0] ?? "",
     });
   }

@@ -36,7 +36,7 @@ The app is designed around a few primary workflows:
 - **Child lock** — protect household settings with a 6-digit PIN while allowing every profile to manage its own tags and playlists. Children can add channels only during an unlocked settings session. See [Child Lock](Child-Lock).
 - **Child profiles** — daily watch-time limits, parent-approved extensions, subscribed-content-only mode, optional Shorts and live-stream blocking, reduced settings tabs, and hidden app-provided YouTube links. See [Child Lock](Child-Lock#child-profiles).
 - **Child activity panel** — adult profiles can see what children are watching, check remaining time, open the video locally, stop watching immediately, and unlock a child profile.
-- **Channel pages** — browse regular videos, Shorts, public playlists, channel metadata, and channel-specific tags.
+- **Channel pages** — browse regular videos, Shorts, public playlists (podcasts included, listed alongside the channel's other playlists), channel metadata, and channel-specific tags.
 - **Theater view** — distraction-light player layout for watching.
 - **Internationalization** — English, Polish, and German UI, with saved user preference.
 - **Player preferences** — captions, player language, caption language, preferred quality, default playback speed, and Shorts visibility.

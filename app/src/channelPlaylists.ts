@@ -3,7 +3,7 @@ import type { PlaylistInfo } from "./youtube";
 
 // Increment when playlist extraction changes in a way that invalidates stored
 // empty/incomplete results. Older cache entries are refreshed on first read.
-export const CHANNEL_PLAYLIST_CACHE_VERSION = 1;
+export const CHANNEL_PLAYLIST_CACHE_VERSION = 2;
 
 export interface VideoChannelPlaylist extends PlaylistInfo {
   channelId: string;
