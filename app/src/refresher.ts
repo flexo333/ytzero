@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { checkIsShort, fetchChannelAbout, fetchChannelFeed, fetchChannelPlaylists, fetchChannelStreams, fetchChannelSubscriberCountFromWatch, fetchChannelVideos, fetchChannelVideosDurations, fetchLiveInfo, fetchPlaylistFeed, fetchPlaylistSnapshot, fetchVideoInfo, fetchVideoPublishedAt, isPrivateVideoError } from "./youtube";
+import { checkIsShort, fetchChannelAbout, fetchChannelFeed, fetchChannelPlaylists, fetchChannelStreams, fetchChannelSubscriberCountFromWatch, fetchChannelVideos, fetchChannelVideosDurations, fetchLiveInfo, fetchPlaylistFeed, fetchPlaylistSnapshot, fetchVideoInfo, fetchVideoPublishedAt, isPrivateVideoError, type PlaylistVideo } from "./youtube";
 import { applyAutoTags } from "./autotags";
 import { applyPlaylistRulesToVideo } from "./userPlaylists";
 import { applyFilterRules } from "./filterRules";
@@ -144,18 +144,29 @@ const ensureChannel = db.prepare(`
  */
 export async function importPlaylistVideos(playlistId: string, force = false): Promise<{ added: number; channelId: string }> {
   const feed = await fetchPlaylistFeed(playlistId, force).catch(() => null);
-  const snapshot = await fetchPlaylistSnapshot(playlistId, force).catch(() => ({
-    videos: (feed?.videos ?? []).map((video, index) => ({
-      videoId: video.videoId,
-      title: video.title,
-      thumbnail: video.thumbnail,
-      channelTitle: video.channelTitle || feed?.channelTitle || "",
-      channelId: video.channelId || feed?.channelId || "",
-      duration: "",
-      index,
-    })),
-    complete: false,
-  }));
+  let snapshot: { videos: PlaylistVideo[]; complete: boolean };
+  try {
+    snapshot = await fetchPlaylistSnapshot(playlistId, force);
+  } catch (snapshotError) {
+    // The playlist page failed. If RSS still gave us videos we can proceed from
+    // that. If neither source produced anything usable (e.g. a transient
+    // YouTube outage hitting both) surface the failure instead of masking it as
+    // a successful empty sync, which would falsely advance sync_attempted_at and
+    // delay the retry.
+    if (!feed || feed.videos.length === 0) throw snapshotError;
+    snapshot = {
+      videos: feed.videos.map((video, index) => ({
+        videoId: video.videoId,
+        title: video.title,
+        thumbnail: video.thumbnail,
+        channelTitle: video.channelTitle || feed.channelTitle || "",
+        channelId: video.channelId || feed.channelId || "",
+        duration: "",
+        index,
+      })),
+      complete: false,
+    };
+  }
   // Podcasts (and some playlists) don't expose an RSS feed carrying an owner
   // channel. Fall back to the owner reported by the scraped snapshot so that
   // following the playlist still imports its videos instead of silently no-op'ing.
