@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { checkIsShort, fetchChannelAbout, fetchChannelFeed, fetchChannelPlaylists, fetchChannelStreams, fetchChannelSubscriberCountFromWatch, fetchChannelVideos, fetchChannelVideosDurations, fetchLiveInfo, fetchPlaylistFeed, fetchPlaylistSnapshot, fetchVideoInfo, fetchVideoPublishedAt, isPrivateVideoError } from "./youtube";
+import { checkIsShort, fetchChannelAbout, fetchChannelFeed, fetchChannelPlaylists, fetchChannelStreams, fetchChannelSubscriberCountFromWatch, fetchChannelVideos, fetchChannelVideosDurations, fetchLiveInfo, fetchPlaylistFeed, fetchPlaylistSnapshot, fetchVideoInfo, fetchVideoPublishedAt, isPrivateVideoError, type PlaylistVideo } from "./youtube";
 import { applyAutoTags } from "./autotags";
 import { applyPlaylistRulesToVideo } from "./userPlaylists";
 import { applyFilterRules } from "./filterRules";
@@ -143,30 +143,47 @@ const ensureChannel = db.prepare(`
  * The channel row is created (as external) when not already present.
  */
 export async function importPlaylistVideos(playlistId: string, force = false): Promise<{ added: number; channelId: string }> {
-  const feed = await fetchPlaylistFeed(playlistId, force);
-  if (!feed.channelId) return { added: 0, channelId: "" };
-  const snapshot = await fetchPlaylistSnapshot(playlistId, force).catch(() => ({
-    videos: feed.videos.map((video, index) => ({
-      videoId: video.videoId,
-      title: video.title,
-      thumbnail: video.thumbnail,
-      channelTitle: video.channelTitle || feed.channelTitle,
-      channelId: video.channelId || feed.channelId,
-      duration: "",
-      index,
-    })),
-    complete: false,
-  }));
-  const richById = new Map(feed.videos.map((video) => [video.videoId, video]));
+  const feed = await fetchPlaylistFeed(playlistId, force).catch(() => null);
+  let snapshot: { videos: PlaylistVideo[]; complete: boolean };
+  try {
+    snapshot = await fetchPlaylistSnapshot(playlistId, force);
+  } catch (snapshotError) {
+    // The playlist page failed. If RSS still gave us videos we can proceed from
+    // that. If neither source produced anything usable (e.g. a transient
+    // YouTube outage hitting both) surface the failure instead of masking it as
+    // a successful empty sync, which would falsely advance sync_attempted_at and
+    // delay the retry.
+    if (!feed || feed.videos.length === 0) throw snapshotError;
+    snapshot = {
+      videos: feed.videos.map((video, index) => ({
+        videoId: video.videoId,
+        title: video.title,
+        thumbnail: video.thumbnail,
+        channelTitle: video.channelTitle || feed.channelTitle || "",
+        channelId: video.channelId || feed.channelId || "",
+        duration: "",
+        index,
+      })),
+      complete: false,
+    };
+  }
+  // Podcasts (and some playlists) don't expose an RSS feed carrying an owner
+  // channel. Fall back to the owner reported by the scraped snapshot so that
+  // following the playlist still imports its videos instead of silently no-op'ing.
+  const defaultChannelId = feed?.channelId || snapshot.videos.find((v) => v.channelId)?.channelId || "";
+  const defaultChannelTitle = feed?.channelTitle || snapshot.videos.find((v) => v.channelTitle)?.channelTitle || "";
+  if (!defaultChannelId) return { added: 0, channelId: "" };
+  const playlistTitle = feed?.title ?? "";
+  const richById = new Map((feed?.videos ?? []).map((video) => [video.videoId, video]));
 
-  ensureChannel.run(feed.channelId, feed.channelTitle, `https://www.youtube.com/channel/${feed.channelId}`);
-  ensureChannelPlaylist(playlistId, feed.channelId);
+  ensureChannel.run(defaultChannelId, defaultChannelTitle, `https://www.youtube.com/channel/${defaultChannelId}`);
+  ensureChannelPlaylist(playlistId, defaultChannelId);
   db.prepare(`UPDATE channel_playlists SET
       title = CASE WHEN TRIM(?) != '' THEN ? ELSE title END,
       thumbnail = CASE WHEN TRIM(?) != '' THEN ? ELSE thumbnail END,
       video_count = ?, updated_at = datetime('now')
     WHERE playlist_id = ?`).run(
-      feed.title, feed.title,
+      playlistTitle, playlistTitle,
       snapshot.videos[0]?.thumbnail || "", snapshot.videos[0]?.thumbnail || "",
       String(snapshot.videos.length), playlistId,
     );
@@ -178,8 +195,8 @@ export async function importPlaylistVideos(playlistId: string, force = false): P
   const importAll = db.transaction((videos: typeof snapshot.videos) => {
     for (const v of videos) {
       const rich = richById.get(v.videoId);
-      const ownerChannelId = v.channelId || rich?.channelId || feed.channelId;
-      const ownerChannelTitle = v.channelTitle || rich?.channelTitle || feed.channelTitle;
+      const ownerChannelId = v.channelId || rich?.channelId || defaultChannelId;
+      const ownerChannelTitle = v.channelTitle || rich?.channelTitle || defaultChannelTitle;
       ensureChannel.run(ownerChannelId, ownerChannelTitle, `https://www.youtube.com/channel/${ownerChannelId}`);
       const isNew = !videoExists.get(v.videoId);
       insertPlaylistVideo.run(
@@ -209,10 +226,10 @@ export async function importPlaylistVideos(playlistId: string, force = false): P
 
   if (added > 0) {
     backfillShorts(snapshot.videos.map((v) => v.videoId)).catch(() => {});
-    log.info("playlist.import.added", { playlistId, channelId: feed.channelId, added });
+    log.info("playlist.import.added", { playlistId, channelId: defaultChannelId, added });
   }
   if (notificationsCreated > 0) log.info("playlist.notifications_created", { playlistId, videos: discoveredVideoIds.length, notifications: notificationsCreated });
-  return { added, channelId: feed.channelId };
+  return { added, channelId: defaultChannelId };
 }
 
 const playlistSyncsInFlight = new Map<string, Promise<{ added: number; channelId: string }>>();
