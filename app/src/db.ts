@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS channel_playlists (
   title       TEXT NOT NULL DEFAULT '',
   thumbnail   TEXT NOT NULL DEFAULT '',
   video_count TEXT NOT NULL DEFAULT '',
+  kind        TEXT NOT NULL DEFAULT 'playlist',
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_channel_playlists_channel ON channel_playlists(channel_id);
@@ -517,6 +518,7 @@ try { db.exec("ALTER TABLE channels ADD COLUMN avatar_checked_at TEXT"); } catch
 try { db.exec("ALTER TABLE channels ADD COLUMN avatar_refresh_attempted_at TEXT"); } catch {}
 try { db.exec("ALTER TABLE channel_playlists ADD COLUMN last_synced_at TEXT"); } catch {}
 try { db.exec("ALTER TABLE channel_playlists ADD COLUMN sync_attempted_at TEXT"); } catch {}
+try { db.exec("ALTER TABLE channel_playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'playlist'"); } catch {}
 try { db.exec("ALTER TABLE channel_playlist_videos ADD COLUMN discovered_at TEXT"); } catch {}
 try { db.exec("ALTER TABLE channel_playlist_videos ADD COLUMN last_seen_at TEXT"); } catch {}
 try { db.exec("ALTER TABLE channel_playlist_videos ADD COLUMN position INTEGER NOT NULL DEFAULT 0"); } catch {}

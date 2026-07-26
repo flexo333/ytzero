@@ -2212,7 +2212,7 @@ api.get("/channel-playlists/:id", async (c) => {
   const uid = currentUserId(c);
   const id = c.req.param("id");
   let playlist = db.prepare(`
-    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.last_synced_at,
+    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.kind, cp.last_synced_at,
            cp.channel_id, COALESCE(NULLIF(ch.custom_title, ''), ch.title) AS channel_title,
            ch.thumbnail AS channel_thumbnail,
            EXISTS(SELECT 1 FROM user_followed_playlists ufp WHERE ufp.user_id = ? AND ufp.playlist_id = cp.playlist_id) AS followed
@@ -2223,7 +2223,7 @@ api.get("/channel-playlists/:id", async (c) => {
     try {
       await syncPlaylist(id);
       playlist = db.prepare(`
-        SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.last_synced_at,
+        SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.kind, cp.last_synced_at,
                cp.channel_id, COALESCE(NULLIF(ch.custom_title, ''), ch.title) AS channel_title,
                ch.thumbnail AS channel_thumbnail, 0 AS followed
         FROM channel_playlists cp JOIN channels ch ON ch.channel_id = cp.channel_id
@@ -2286,7 +2286,7 @@ api.post("/channel-playlists/:id/sync", async (c) => {
 api.get("/followed-playlists", (c) => {
   const uid = currentUserId(c);
   const playlists = db.prepare(`
-    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.last_synced_at,
+    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.kind, cp.last_synced_at,
            cp.channel_id, COALESCE(NULLIF(ch.custom_title, ''), ch.title) AS channel_title,
            ch.thumbnail AS channel_thumbnail, ufp.followed_at, ufp.include_in_feed
     FROM user_followed_playlists ufp
@@ -2301,7 +2301,7 @@ api.get("/followed-playlists", (c) => {
 api.get("/followed-playlists/updates", (c) => {
   const uid = currentUserId(c);
   const playlists = db.prepare(`
-    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.last_synced_at,
+    SELECT cp.playlist_id, cp.title, cp.thumbnail, cp.video_count, cp.kind, cp.last_synced_at,
            cp.channel_id, COALESCE(NULLIF(ch.custom_title, ''), ch.title) AS channel_title,
            ch.thumbnail AS channel_thumbnail, ufp.followed_at, ufp.feed_from, ufp.include_in_feed
     FROM user_followed_playlists ufp

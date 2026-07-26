@@ -3,7 +3,7 @@ import type { PlaylistInfo } from "./youtube";
 
 // Increment when playlist extraction changes in a way that invalidates stored
 // empty/incomplete results. Older cache entries are refreshed on first read.
-export const CHANNEL_PLAYLIST_CACHE_VERSION = 1;
+export const CHANNEL_PLAYLIST_CACHE_VERSION = 2;
 
 export interface VideoChannelPlaylist extends PlaylistInfo {
   channelId: string;
@@ -11,13 +11,14 @@ export interface VideoChannelPlaylist extends PlaylistInfo {
 }
 
 const upsertPlaylist = db.prepare(`
-  INSERT INTO channel_playlists (playlist_id, channel_id, title, thumbnail, video_count, updated_at)
-  VALUES (?, ?, ?, ?, ?, datetime('now'))
+  INSERT INTO channel_playlists (playlist_id, channel_id, title, thumbnail, video_count, kind, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
   ON CONFLICT(playlist_id) DO UPDATE SET
     channel_id = excluded.channel_id,
     title = excluded.title,
     thumbnail = CASE WHEN TRIM(excluded.thumbnail) != '' THEN excluded.thumbnail ELSE channel_playlists.thumbnail END,
     video_count = excluded.video_count,
+    kind = excluded.kind,
     updated_at = datetime('now')
 `);
 
@@ -41,6 +42,7 @@ export function saveChannelPlaylists(channelId: string, playlists: PlaylistInfo[
         playlist.title,
         playlist.thumbnail,
         playlist.videoCount,
+        playlist.kind,
       );
     }
   })(playlists);
@@ -72,6 +74,7 @@ export function videoPlaylistsForUser(userId: number, videoId: string): VideoCha
       cp.title,
       cp.thumbnail,
       cp.video_count AS videoCount,
+      cp.kind AS kind,
       cp.channel_id AS channelId,
       COALESCE(NULLIF(c.custom_title, ''), c.title) AS channelTitle
     FROM channel_playlist_videos cpv

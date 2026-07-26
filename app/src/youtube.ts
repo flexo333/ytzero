@@ -387,6 +387,7 @@ export interface PlaylistInfo {
   title: string;
   thumbnail: string;
   videoCount: string;
+  kind: "playlist" | "podcast";
 }
 
 const playlistCache = new Map<string, { at: number; data: PlaylistInfo[]; complete: boolean }>();
@@ -402,12 +403,14 @@ function collectChannelPlaylists(data: any, out: PlaylistInfo[], seen: Set<strin
       title: decodeHtmlEntities(r.title?.runs?.[0]?.text ?? r.title?.simpleText ?? ""),
       thumbnail: r.thumbnail?.thumbnails?.at(-1)?.url ?? "",
       videoCount: r.videoCountShortText?.simpleText ?? "",
+      kind: "playlist",
     });
   }
   // Current markup (lockup view models).
   for (const vm of deepCollect(data, "lockupViewModel")) {
     const id = vm?.contentId;
-    if (!id || seen.has(id) || !String(vm?.contentType ?? "").includes("PLAYLIST")) continue;
+    const contentType = String(vm?.contentType ?? "");
+    if (!id || seen.has(id) || !/(PLAYLIST|PODCAST)/.test(contentType)) continue;
     seen.add(id);
     const badges = deepCollect(vm, "thumbnailBadgeViewModel")
       .map((b: any) => b?.text)
@@ -417,6 +420,7 @@ function collectChannelPlaylists(data: any, out: PlaylistInfo[], seen: Set<strin
       title: decodeHtmlEntities(vm?.metadata?.lockupMetadataViewModel?.title?.content ?? ""),
       thumbnail: deepCollect(vm, "sources")[0]?.[0]?.url ?? "",
       videoCount: badges[0] ?? "",
+      kind: contentType.includes("PODCAST") ? "podcast" : "playlist",
     });
   }
 }
@@ -494,6 +498,38 @@ export async function fetchChannelPlaylists(channelId: string, force = false): P
       break;
     }
   }
+  // Some channels surface their podcast only on a separate `/podcasts` tab
+  // rather than in the `/playlists` payload. Only fetch it when a podcasts tab
+  // is actually present so channels without one incur no extra request.
+  try {
+    const hasPodcastsTab = deepCollect(data, "tabRenderer").some((tab: any) => {
+      const url = tab?.endpoint?.commandMetadata?.webCommandMetadata?.url;
+      if (typeof url === "string" && /\/podcasts$/i.test(url)) return true;
+      return typeof tab?.title === "string" && /podcast/i.test(tab.title);
+    });
+    if (hasPodcastsTab) {
+      const podcastsRes = await fetch(`https://www.youtube.com/channel/${channelId}/podcasts`, {
+        headers: FETCH_HEADERS,
+      });
+      if (podcastsRes.ok) {
+        const podcastsHtml = await podcastsRes.text();
+        const podcastData = extractInitialData(podcastsHtml);
+        collectChannelPlaylists(podcastData, out, seen);
+        const podcastConfig = innertubePlaylistConfig(podcastsHtml);
+        let podcastToken = playlistContinuationToken(podcastData);
+        for (let page = 0; podcastConfig && podcastToken && page < MAX_PLAYLIST_CONTINUATION_PAGES; page++) {
+          const previousToken = podcastToken;
+          const continuation = await fetchPlaylistContinuation(podcastToken, podcastConfig);
+          collectChannelPlaylists(continuation, out, seen);
+          podcastToken = playlistContinuationToken(continuation);
+          if (podcastToken === previousToken) break;
+        }
+      }
+    }
+  } catch {
+    // Never let podcasts-tab merge break the primary playlists result.
+  }
+
   playlistCache.set(channelId, { at: Date.now(), data: out, complete: true });
   return out;
 }
